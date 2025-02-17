@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 # Set the random seed
-torch.manual_seed(52)
+torch.manual_seed(100)
 
 
 # Example data for comparison (5 features, 100 examples)
@@ -34,36 +34,37 @@ def cross_entropy_loss(A, y):
     """
     Use torch.log() and torch.sum()
     """
-    Your Code Here
-    return Your Code Here
+    loss = -torch.log(A[y, torch.arange(y.shape[0])]).mean()
+    
+    return loss
 
 
 ### PyTorch 3-layer neural network for 3-class classification ###
 def pytorch_3_layer_network(X, y, n_x, n_h1, n_h2, n_output, m, learning_rate, iterations):
     # Initialize weights and biases using torch.nn.Parameter(), so Pytorch knows they are parameters
-    W1 = Your Code Here # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
-    b1 = Your Code Here # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
+    W1 = torch.nn.Parameter(torch.randn(n_h1, n_x, dtype=torch.float32) * 0.01) # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
+    b1 = torch.nn.Parameter(torch.zeros((n_h1, 1), dtype=torch.float32))  # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
     
-    W2 = Your Code Here # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
-    b2 = Your Code Here # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
+    W2 = torch.nn.Parameter(torch.randn(n_h1, n_x, dtype=torch.float32) * 0.01) # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
+    b2 = torch.nn.Parameter(torch.zeros((n_h1, 1), dtype=torch.float32)) # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
     
-    W3 = Your Code Here # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
-    b3 = Your Code Here # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
+    W3 = torch.nn.Parameter(torch.randn(n_h1, n_x, dtype=torch.float32) * 0.01) # Use torch.nn.Parameter() and torch.randn(dimesion1, dimesion2, dtype=torch.float32) * 0.01
+    b3 = torch.nn.Parameter(torch.zeros((n_h1, 1), dtype=torch.float32)) # Use torch.nn.Parameter() and torch.zeros((dimesion1, dimesion2), dtype=torch.float32)
 
     cost_values = []
 
     for iter in range(iterations):
         # Forward propagation
-        Z1 = Your Code Here  # First hidden layer pre-activation, use torch.mm()
-        A1 = Your Code Here  # First hidden layer activation, use torch.sigmoid()
+        Z1 = torch.mm(W1, X) + b1  # First hidden layer pre-activation, use torch.mm()
+        A1 = torch.sigmoid(Z1)  # First hidden layer activation, use torch.sigmoid()
         
-        Z2 = Your Code Here  # Second hidden layer pre-activation, use torch.mm()
-        A2 = Your Code Here  # Second hidden layer activation, use torch.sigmoid()
+        Z2 = torch.mm(W2, A1) + b2  # Second hidden layer pre-activation, use torch.mm()
+        A2 = torch.sigmoid(Z2) # Second hidden layer activation, use torch.sigmoid()
         
-        Z3 = Your Code Here  # Output layer pre-activation (logits), use torch.mm()
+        Z3 = torch.mm(W3, A2) + b3 # Output layer pre-activation (logits), use torch.mm()
         
         # Softmax activation for multi-class classification
-        A3 = softmax(Z3)  # Apply softmax function to get class probabilities
+        A3 = softmax(Z3)  # Apply softmax to get class probabilities
                 
         # Compute the cross-entropy loss
         J = cross_entropy_loss(A3, y)
@@ -72,25 +73,25 @@ def pytorch_3_layer_network(X, y, n_x, n_h1, n_h2, n_output, m, learning_rate, i
 
 
         # Backward propagation (calculate gradients)
-        Your Code Here # Only one line
+        J.backward() # Only one line
 
 
         # Update weights and biases using gradient descent
         with torch.no_grad():
-            Your Code Here # W1 
-            Your Code Here # b1 
-            Your Code Here # W2 
-            Your Code Here # b2 
-            Your Code Here # W3 
-            Your Code Here # b3
+            W1 -= learning_rate * W1.grad # W1 
+            b1 -= learning_rate * b1.grad # b1 
+            W2 -= learning_rate * W2.grad # W2 
+            b2 -= learning_rate * b2.grad # b2 
+            W3 -= learning_rate * W3.grad # W3 
+            b3 -= learning_rate * b3.grad # b3
 
             # Zero the gradients after updating, use XXX.grad.zero_()
-            Your Code Here # Zero the gradients of W1
-            Your Code Here # Zero the gradients of b1
-            Your Code Here # Zero the gradients of W2
-            Your Code Here # Zero the gradients of b2
-            Your Code Here # Zero the gradients of W3
-            Your Code Here # Zero the gradients of b3
+            W1.grad.zero_() # Zero the gradients of W1
+            b1.grad.zero_() # Zero the gradients of b1
+            W2.grad.zero_() # Zero the gradients of W2
+            b2.grad.zero_() # Zero the gradients of b2
+            W3.grad.zero_() # Zero the gradients of W3
+            b3.grad.zero_() # Zero the gradients of b3
 
     return cost_values
 

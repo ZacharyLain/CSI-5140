@@ -103,8 +103,6 @@ def pytorch_3_layer_network(X, y, n_x, n_h1, n_h2, n_output, learning_rate, epoc
                 b3.grad.zero_() # Zero the gradients of b3
 
             cost_values.append(J.item())
-            
-            print(f'Loss: {J.item()}')
 
     return cost_values
 
