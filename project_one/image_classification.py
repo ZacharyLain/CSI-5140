@@ -3,12 +3,13 @@ import torchvision
 import torchvision.transforms as transforms
 
 import torch.nn as nn
-import torch.nn.functional as F
 
 import torch.optim as optim
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+import custom_functions as cf
 
 # Load and normalize CIFAR10
 def transform_data(batch_size: int = 4):
@@ -43,52 +44,54 @@ def imshow(img):
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
 
-class Custom_Optimizer():
-    def __init__(self, params, lr: float = 0.001, momentum: float = 0.9):
-        self.params = params
-        self.lr = lr
-        self.momentum = momentum
-        self.velocity = [torch.zeros_like(param) for param in params]
-        
-    def zero_grad(self):
-        for param in self.params:
-            param.grad = torch.zeros_like(param)
-            
-    def step(self):
-        for i, param in enumerate(self.params):
-            self.velocity[i] = self.momentum * self.velocity[i] + self.lr * param.grad
-            param -= self.velocity[i]
-
 class Net(nn.Module):
     def __init__(self, optimizer = None, criterion = None):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.bn1   = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.bn2   = nn.BatchNorm2d(32)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn3   = nn.BatchNorm2d(64)
+        self.conv4 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn4   = nn.BatchNorm2d(64)
+        self.pool  = nn.MaxPool2d(2, 2)
+        self.fc1   = cf.CustomFCLayer(64 * 8 * 8, 256)  # if you do 2 pools from 32x32 -> 8x8
+        self.fc2   = cf.CustomFCLayer(256, 10)
         
         if optimizer is None:
-            self.optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+            # self.optimizer = optim.SGD(self.parameters(), lr=0.001, momentum=0.9)
+            self.optimizer = cf.CustomAdamOptimizer(self.parameters(), lr=0.001)
         else:
             self.optimizer = optimizer
             
         if criterion is None:
-            self.criterion = nn.CrossEntropyLoss()
+            # self.criterion = nn.CrossEntropyLoss()
+            self.criterion = cf.CustomCrossEntropyLoss()
         else:
             self.criterion = criterion
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+        # Convolutional layers
+        # Block 1
+        x = cf.CustomReLU(self.bn1(self.conv1(x)))
+        x = cf.CustomReLU(self.bn2(self.conv2(x)))
+        x = self.pool(x)
+        
+        # Block 2
+        x = cf.CustomReLU(self.bn3(self.conv3(x)))
+        x = cf.CustomReLU(self.bn4(self.conv4(x)))
+        x = self.pool(x)
+        
+        # Fully connected layers
+        x = torch.flatten(x, 1)
+        x = cf.CustomReLU(self.fc1(x))
+        # x = cf.CustomDropout(x, 0.5)
+        x = self.fc2(x)
+
+        return cf.CustomSoftmax(x)
     
-    def train(self, data, device):
+    def train(self, data, device): 
         optimizer = self.optimizer
         criterion = self.criterion
         
@@ -98,130 +101,97 @@ class Net(nn.Module):
         optimizer.zero_grad()
 
         # forward + backward + optimize
-        outputs = net(inputs)
+        outputs = self.net(inputs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
 
         return loss
+
+def train_one_epoch(net, trainloader, device, optimizer, criterion):
+    running_loss = 0.0
     
-    def evaluate(self, data, device):
-        correct = 0
-        total = 0
+    for i, (inputs, labels) in enumerate(trainloader):
+        inputs, labels = inputs.to(device), labels.to(device)
         
-        # Not training, dont need to calculate gradients
-        with torch.no_grad():
-            for data in testloader:
-                inputs, labels = data[0].to(device), data[1].to(device)
+        # Zero gradients
+        optimizer.zero_grad()
 
-                # Forward pass
-                outputs = net(inputs)
-
-                # Class with the highest score is the prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-        return correct, total
-
-# main
-if __name__ == '__main__':
-    # Device configuration
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    print(device)
+        # Forward
+        outputs = net(inputs)
+        
+        # Loss
+        loss = criterion(outputs, labels)
+        
+        # Backward
+        loss.backward()
+        optimizer.step()
+        
+        running_loss += loss.item()
     
-    # Hyper-parameters
-    num_epochs = 2
-    batch_size = 4
+    return running_loss / len(trainloader)
+
+def evaluate(net, testloader, device):
+    correct = 0
+    total = 0
+    
+    with torch.no_grad():
+        for inputs, labels in testloader:
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = net(inputs)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+            
+    accuracy = 100 * correct / total
+    
+    return accuracy
+
+
+if __name__ == '__main__':
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f'Using device:\n\t{device}')
+    
+    # Hyperparameters
+    num_epochs = 20
+    batch_size = 64
     learning_rate = 0.001
     momentum = 0.9
     
-    # Load and normalize CIFAR10
+    print(f'Hyperparameters:\n\tnum_epochs={num_epochs}, batch_size={batch_size}, learning_rate={learning_rate}, momentum={momentum}')
+    
     [trainset, trainloader], [testset, testloader], classes = transform_data(batch_size)
     
-    # Define a Convolutional Neural Network
-    net = Net()
-    net.to(device)
+    # Create net & send to device
+    net = Net().to(device)
     
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum)
+    # Choose custom or PyTorch optimizer/loss
+    custom_opt = cf.CustomAdamOptimizer(list(net.parameters()), lr=learning_rate)
+    custom_criterion = cf.CustomCrossEntropyLoss()
+    # optimizer = optim.SGD(net.parameters(), lr=learning_rate, momentum=momentum)
+    # criterion = nn.CrossEntropyLoss()
     
+    print(f'Optimizer:\n\t{custom_opt.__class__.__name__}')
+    print(f'Criterion:\n\t{custom_criterion.__class__.__name__}')
     
-    print(f'Training the network for {num_epochs} epochs...')
-    for epoch in range(num_epochs):  # loop over the dataset multiple times
-
-        running_loss = 0.0
+    print(f'Beginning training for {num_epochs} epochs...')
+    
+    for epoch in range(num_epochs):
+        current_lr = cf.CustomCosineRateDecay(learning_rate, epoch, num_epochs)
         
-        for i, data in enumerate(trainloader, 0):
-            # # get the inputs; data is a list of [inputs, labels]
-            # inputs, labels = data[0].to(device), data[1].to(device)
-
-            # # zero the parameter gradients
-            # optimizer.zero_grad()
-
-            # # forward + backward + optimize
-            # outputs = net(inputs)
-            # loss = criterion(outputs, labels)
-            # loss.backward()
-            # optimizer.step()
-            
-            loss = Net.train(net, data, device)
-
-            # print statistics
-            running_loss += loss.item()
-            
-            if i % 2000 == 1999:    # print every 2000 mini-batches
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-                running_loss = 0.0
-
-    print('\nFinished Training')
+        custom_opt.lr = current_lr
+        
+        epoch_loss = train_one_epoch(net, trainloader, device, custom_opt, custom_criterion)
+        acc = evaluate(net, testloader, device)
+        print(f"Epoch {epoch+1}/{num_epochs}, Loss={epoch_loss:.3f}, Test Acc={acc:.2f}%")
     
-    print('Saving model...')
+    # Save
     PATH = './cifar_net.pth'
     torch.save(net.state_dict(), PATH)
-    print('Model saved')
-    
-    # Test the network on the test data
-    dataiter = iter(testloader)
-    images, labels = next(dataiter)
-    
-    # print images
-    imshow(torchvision.utils.make_grid(images.cpu()))
-    print('GroundTruth: ', ' '.join(f'{classes[labels[j]]:5s}' for j in range(4)))
-    
-    net = Net()
-    net.to(device)
-    net.load_state_dict(torch.load(PATH, weights_only=True))
+    print("Model saved.")
 
-    images, labels = images.to(device), labels.to(device)
-    outputs = net(images)
-    
-    _, predicted = torch.max(outputs, 1)
-    
-    print('Predicted: ', ' '.join('%5s' % classes[predicted[j]] for j in range(batch_size)))
-    
-    # Test the network on the whole dataset
-    correct, total = Net.evaluate(net, testloader, device)
-            
-    print(f'Accuracy of the network on the 10000 test images: {100 * correct / total}%')
-    
-    # Prepare to count predictions for each class
-    correct_pred = {classname: 0 for classname in classes}
-    total_pred = {classname: 0 for classname in classes}
-
-    # Not training, dont need to calculate gradients
-    with torch.no_grad():
-        for data in testloader:
-            inputs, labels = data[0].to(device), data[1].to(device)
-            outputs = net(inputs)
-            _, predictions = torch.max(outputs, 1)
-            # collect the correct predictions for each class
-            for label, prediction in zip(labels, predictions):
-                if label == prediction:
-                    correct_pred[classes[label]] += 1
-                total_pred[classes[label]] += 1
-
-    # Print accuracy for each class
-    for classname, correct_count in correct_pred.items():
-        accuracy = 100 * float(correct_count) / total_pred[classname]
-        print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')
+    # Load
+    net_with_weights = Net().to(device)
+    net_with_weights.load_state_dict(torch.load(PATH, weights_only=True))
+    acc = evaluate(net_with_weights, testloader, device)
+    print(f"Accuracy after loading: {acc:.2f}%")
