@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import time
 
 # Set the random seed
-np.random.seed(52)
+np.random.seed(42)
 
 # Example data for comparison (5 features, 100 examples)
 X = np.random.rand(5, 100)  # 5 features, 100 examples
